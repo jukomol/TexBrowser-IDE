@@ -52,15 +52,28 @@ jobs:
       # Package shelf: every LaTeX package of the TeX Live collections below,
       # split into small per-package bundles that the browser fetches on demand.
       - name: Install TeX Live (shelf source)
-        timeout-minutes: 15
+        timeout-minutes: 20
         run: |
-          # Retry and time out stalled connections instead of hanging the job.
+          # The runner's Azure Ubuntu mirror sometimes trickles or stalls. apt's own
+          # timeouts only catch silent connections, so each attempt is capped; on a
+          # failed attempt the main Ubuntu archive is put first and apt retries,
+          # reusing the packages it already downloaded.
           APT_OPTS="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          PKGS="texlive-base texlive-latex-base texlive-latex-recommended texlive-latex-extra
+            texlive-fonts-recommended texlive-pictures texlive-science texlive-bibtex-extra
+            texlive-lang-greek texlive-plain-generic tex-gyre cm-super"
           sudo apt-get $APT_OPTS update -qq
-          sudo apt-get $APT_OPTS install -y -qq --no-install-recommends \
-            texlive-base texlive-latex-base texlive-latex-recommended texlive-latex-extra \
-            texlive-fonts-recommended texlive-pictures texlive-science texlive-bibtex-extra \
-            texlive-lang-greek texlive-plain-generic tex-gyre cm-super
+          for attempt in 1 2 3; do
+            if sudo timeout 300 apt-get $APT_OPTS install -y -qq --no-install-recommends $PKGS; then break; fi
+            [ "$attempt" = 3 ] && { echo "::error::apt install failed 3 times"; exit 1; }
+            echo "::warning::apt install attempt $attempt failed or stalled; switching mirrors and retrying"
+            if [ -f /etc/apt/apt-mirrors.txt ]; then
+              printf 'http://archive.ubuntu.com/ubuntu/\tpriority:1\nhttp://us.archive.ubuntu.com/ubuntu/\tpriority:2\nhttp://azure.archive.ubuntu.com/ubuntu/\tpriority:3\n' \
+                | sudo tee /etc/apt/apt-mirrors.txt
+            fi
+            sudo dpkg --configure -a || true
+            sudo apt-get $APT_OPTS update -qq
+          done
           echo "FONTS_EXTRA_VERSION=$(apt-cache show --no-all-versions texlive-fonts-extra | sed -n 's/^Version: //p')" >> "$GITHUB_ENV"
 
       # texlive-fonts-extra is 1.7 GB (a 629 MB download): it is cached between runs,
