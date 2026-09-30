@@ -4,7 +4,7 @@
 No server, no account, no upload. Your documents stay on your machine unless you push them to your own GitHub.
 
 - **Real TeX Live.** pdfTeX, XeTeX, BibTeX and makeindex run as WebAssembly in a background thread and produce a native PDF. Low-level primitives (`\makeatletter`, `\dimexpr`, `\ifcase`, …) and heavy packages (geometry, fancyhdr, titlesec, enumitem, TikZ/pgfplots, biblatex, siunitx, beamer, …) work because it *is* TeX.
-- **About 2,000 packages on demand.** The IDE scans your preamble and the TeX log, then fetches only the packages and fonts a document needs, and caches them for offline use.
+- **About 3,300 packages and fonts on demand.** The IDE scans your preamble and the TeX log, then fetches only the packages and fonts a document needs, and caches them for offline use.
 - **Notion-style `/` commands.** Type `/` at the start of a line for 50+ blocks (tables, matrices, equations, figures, TikZ, theorems, citations, beamer frames…). Tables and matrices open visual wizards with live previews.
 - **Beginner-friendly errors.** TeX errors are explained in plain English, with one-click fixes such as *Add `\usepackage{siunitx}`*.
 - **Expert-friendly tooling.** Monaco editor, SyncTeX (Ctrl+Alt+J to jump source→PDF; double-click the PDF to jump back), a document outline, a log and problems panel, multi-file projects, version history and diffs.
@@ -42,7 +42,7 @@ Browser-side TeX usually means a JavaScript re-implementation (latex.js) that ou
 
 - **Engine.** [BusyTeX](https://github.com/busytex/busytex) builds pdfTeX, XeTeX, bibtex8, makeindex and xdvipdfmx into a single Emscripten binary. `scripts/fetch-engine.mjs` downloads a pinned build (TeX Live 2022), checks every file against its SHA-256, and writes `public/engine/manifest.json`.
 - **Fast reruns.** The WASM module is instantiated once. After each tool run, the worker restores a snapshot of the low heap instead of re-instantiating (about 70 ms), so a latexmk loop of several passes stays interactive. kpathsea gets runtime-generated `ls-R` databases, which cut an incremental compile from 3.3 s to about 1.2 s.
-- **The package shelf.** `scripts/build-shelf.mjs` turns a TeX Live installation into about 2,000 small `.tgz` bundles (one per package, with a dependency graph, a font-name index and a merged `pdftex.map`), about 156 MB in total. Before compiling, the worker scans the sources for `\usepackage`, `\documentclass`, `\RequirePackage`, fonts and bib styles. After each pass it reads the log for missing files, fetches the bundles that provide them, and reruns. Large upstream collections are mounted whole when that is cheaper.
+- **The package shelf.** `scripts/build-shelf.mjs` turns a TeX Live installation into about 3,300 small `.tgz` bundles (one per package, with a dependency graph, a font-name index and a merged `pdftex.map`), about 400 MB in total. It includes a curated list of popular fonts from the 1.7 GB `fonts-extra` collection (newtx, Libertine, Source Pro, Roboto, Fira, EB Garamond…; see `scripts/shelf-extra-packages.txt`). Before compiling, the worker scans the sources for `\usepackage`, `\documentclass`, `\RequirePackage`, `\IfFileExists` probes, fonts and bib styles. After each pass it reads the log for missing files, fetches the bundles that provide them, and reruns. Large upstream collections are mounted whole when that is cheaper.
 - **XeLaTeX** runs `xelatex -no-pdf` then `xdvipdfmx`, with a generated `fonts.conf`. **BibTeX** is `bibtex8 --8bit --huge`, and biblatex uses its BibTeX backend (biber is not available in WASM).
 - **Output** is a real PDF plus `synctex.gz`. Aux files are kept between compiles, so edits usually need one pass.
 
@@ -92,8 +92,12 @@ npm run engine:fetch          # ~180 MB WASM engine → public/engine (pinned, S
 
 # optional but recommended: the on-demand package shelf → public/shelf
 sudo apt-get install --no-install-recommends texlive-latex-extra texlive-pictures \
-  texlive-science texlive-bibtex-extra texlive-fonts-recommended texlive-lang-greek cm-super
+  texlive-science texlive-bibtex-extra texlive-fonts-recommended texlive-lang-greek \
+  texlive-plain-generic tex-gyre cm-super
+# optional: popular fonts from texlive-fonts-extra, unpacked aside (1.7 GB)
+(cd /tmp && apt-get download texlive-fonts-extra && dpkg-deb -x texlive-fonts-extra_*.deb fonts-extra)
 npm run shelf:build -- --texmf /usr/share/texlive/texmf-dist --texmf /usr/share/texmf \
+  --extra-texmf /tmp/fonts-extra/usr/share/texlive/texmf-dist --extra-packages scripts/shelf-extra-packages.txt \
   --map /var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map --label "TeX Live 2023 (Ubuntu 24.04)"
 
 npm run dev                   # http://localhost:5173
@@ -114,7 +118,7 @@ Without a shelf the IDE still compiles everything in TeX Live basic and the bund
 1. In the repository, open **Settings → Pages** and set **Source** to **GitHub Actions**.
 2. Push to the default branch, or run the workflow manually.
 
-The workflow fetches the engine, installs TeX Live on the runner to build the shelf, runs unit tests and both end-to-end suites against the production build, then deploys. The site is about 350 MB, within the 1 GB Pages limit. The build uses relative asset paths, so it works under `https://<user>.github.io/<repo>/` without configuration.
+The workflow fetches the engine, installs TeX Live on the runner to build the shelf, runs unit tests and both end-to-end suites against the production build, then deploys. The site is about 600 MB, within the 1 GB Pages limit. The build uses relative asset paths, so it works under `https://<user>.github.io/<repo>/` without configuration.
 
 ## Limitations
 

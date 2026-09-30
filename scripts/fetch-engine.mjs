@@ -172,15 +172,25 @@ async function download(url, dest) {
   fs.renameSync(tmp, dest);
 }
 
-/** Collect sty/cls/bst/bbx/cbx basenames provided by a data package. */
+/**
+ * Basenames a data package provides that TeX may report as missing: packages and
+ * classes, bib styles, font definitions and — for font collections — metrics,
+ * virtual fonts, Type 1 binaries and encodings. The worker maps a missing name
+ * to the collection that provides it and mounts it.
+ */
 function providesOf(files) {
-  const exts = /\.(sty|cls|bst|bbx|cbx|lbx|ldf|tex)$/;
+  const texExts = /\.(sty|cls|bst|bbx|cbx|lbx|ldf|tex|fd|def|cfg|clo)$/;
+  const fontExts = /\.(tfm|vf|pfb|enc|otf)$/;
   const set = new Set();
   for (const f of files) {
     const p = f.filename;
-    if (!p.includes('/tex/') && !p.includes('/bibtex/')) continue;
     const base = p.slice(p.lastIndexOf('/') + 1);
-    if (!exts.test(base)) continue;
+    if (p.includes('/fonts/')) {
+      if (fontExts.test(base)) set.add(base);
+      continue;
+    }
+    if (!p.includes('/tex/') && !p.includes('/bibtex/')) continue;
+    if (!texExts.test(base)) continue;
     // `.tex` files are only interesting when they are tikz/pgf libraries or package parts.
     if (base.endsWith('.tex') && !/^(tikzlibrary|pgflibrary|pgfplotslibrary)/.test(base)) continue;
     set.add(base);
@@ -286,7 +296,7 @@ async function main() {
 
   const total = names.reduce((s, n) => s + fs.statSync(path.join(dir, n)).size, 0);
   console.log(`✔ Engine ready in public/engine/${profile.id}/ (${mb(total)}), manifest written.`);
-  for (const p of packages) console.log(`  · ${p.id.padEnd(36)} ${mb(p.bytes).padStart(9)}  ${p.provides.length} packages/styles`);
+  for (const p of packages) console.log(`  · ${p.id.padEnd(36)} ${mb(p.bytes).padStart(9)}  ${p.provides.length} files`);
 }
 
 main().catch((err) => {

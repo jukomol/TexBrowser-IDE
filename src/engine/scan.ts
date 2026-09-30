@@ -90,6 +90,10 @@ export function scanSources(texts: string[]): ScanResult {
     while ((m = pgfplotslib.exec(src))) for (const n of list(m[1])) files.add(`pgfplotslibrary${n}.code.tex`);
     const tcb = /\\tcbuselibrary\s*\{([^}]+)\}/g;
     while ((m = tcb.exec(src))) for (const n of list(m[1])) files.add(`tcb${n}.code.tex`);
+    // Files probed with \IfFileExists (e.g. "use newtx if installed, else mathptmx"): a full
+    // TeX Live has them, so fetch them when the shelf does instead of silently taking the fallback.
+    const probe = /\\IfFileExists\s*\{\s*([\w.-]+\.(?:sty|cls|def|cfg|fd|bst|tex))\s*\}/g;
+    while ((m = probe.exec(src))) files.add(m[1]);
 
     const bst = /\\bibliographystyle\s*\{([^}]+)\}/g;
     while ((m = bst.exec(src))) {

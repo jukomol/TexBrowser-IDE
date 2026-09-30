@@ -110,6 +110,47 @@ Hello \undefinedmacro{} world.
     binary: { 'img/dot.png': 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' },
     expect: { status: ['success', 'warnings'], passesAtLeast: 2 },
   },
+  // A real-world academic CV preamble: optional newtx via \IfFileExists (must be fetched,
+  // not silently replaced by the fallback), Times metrics from an engine font collection,
+  // TeX Gyre, microtype, lastpage (needs a rerun), enumitem with beginpenalty.
+  cv: {
+    engine: 'pdftex',
+    files: {
+      'main.tex': String.raw`\PassOptionsToPackage{dvipsnames}{xcolor}
+\documentclass[11pt,letterpaper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\IfFileExists{newtxtext.sty}{\usepackage{newtxtext,newtxmath}}{\usepackage{mathptmx}}
+\usepackage{microtype}
+\usepackage[letterpaper,top=0.8in,bottom=0.85in,left=0.85in,right=0.85in,footskip=0.4in]{geometry}
+\usepackage{needspace,enumitem,titlesec,fancyhdr,lastpage}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{hyperref}
+\definecolor{accent}{RGB}{25,55,105}
+\newcommand{\monthyear}{\ifcase\month\or January\or February\or March\or April\or May\or June\or
+  July\or August\or September\or October\or November\or December\fi\ \number\year}
+\pagestyle{fancy}\fancyhf{}\renewcommand{\headrulewidth}{0pt}
+\fancyfoot[C]{\footnotesize Updated \monthyear}
+\fancyfoot[R]{\footnotesize Page \thepage\ of \pageref*{LastPage}}
+\titleformat{\section}{\large\scshape\bfseries\color{accent}}{}{0pt}{}[{\titlerule[0.6pt]}]
+\makeatletter
+\newcommand{\cvkeep}{\par\if@nobreak\else\needspace{4\baselineskip}\fi}
+\makeatother
+\newcommand{\detail}[1]{\par\noindent\hspace*{1.2em}\parbox{\dimexpr\linewidth-1.2em}{#1}\par}
+\newenvironment{yearlist}{\begin{itemize}[leftmargin=6.2em,labelwidth=5.7em,labelsep=0.5em,
+  align=left,topsep=2pt,itemsep=2pt,parsep=0pt,beginpenalty=10000]}{\end{itemize}}
+\begin{document}
+{\LARGE\bfseries\scshape A. N. Author}
+\section{Education}
+\cvkeep\textbf{Ph.D., Something} \hfill 2025 -- Present
+\detail{Advisors: Dr.\ One and Dr.\ Two --- 95\%, 2\,cm, $\alpha+\beta$}
+\begin{itemize}[leftmargin=2.4em,label=\textbullet]\item Item\end{itemize}
+\section{Honors}
+\begin{yearlist}\item[2026] Champion \item[2021] Finalist\end{yearlist}
+\end{document}`,
+    },
+    expect: { status: ['success', 'warnings'], fetchedIncludes: 'newtx', logIncludes: ['newtxtext.sty', 'lastpage.sty'], logExcludes: ['mathptmx.sty'], passesAtLeast: 2 },
+  },
   lualatex: {
     engine: 'luatex',
     files: {

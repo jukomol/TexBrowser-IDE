@@ -11,7 +11,8 @@ export type QuickFix =
   | { kind: 'addPackage'; label: string; pkg: string; options?: string }
   | { kind: 'replaceInLine'; label: string; file: string; line: number; search: string; replace: string }
   | { kind: 'switchEngine'; label: string; engine: 'xetex' | 'pdftex' }
-  | { kind: 'openFile'; label: string; file: string; line?: number };
+  | { kind: 'openFile'; label: string; file: string; line?: number }
+  | { kind: 'passOptions'; label: string; pkg: string };
 
 export interface Explanation {
   title: string;
@@ -172,9 +173,11 @@ export function explain(d: Diagnostic): Explanation | null {
 
   const optionClash = /Option clash for package (\S+)/.exec(msg);
   if (optionClash) {
+    const pkg = optionClash[1].replace(/\.$/, '');
+    fixes.push({ kind: 'passOptions', label: `Pass your ${pkg} options before \\documentclass`, pkg });
     return {
-      title: `Option clash for ${optionClash[1]}`,
-      detail: `${optionClash[1]} was loaded twice with different options (possibly indirectly by another package). Load it once, early, with all options.`,
+      title: `Option clash for ${pkg}`,
+      detail: `${pkg} was loaded twice with different options — usually another package loaded it first without yours (newtxtext does this with xcolor). Passing your options with \\PassOptionsToPackage before \\documentclass makes every load use them.`,
       fixes,
     };
   }
@@ -214,4 +217,22 @@ export function explain(d: Diagnostic): Explanation | null {
   }
 
   return null;
+}
+
+/**
+ * Fix an option clash: find the document's own `\usepackage[opts]{pkg}` and add
+ * `\PassOptionsToPackage{opts}{pkg}` before `\documentclass`, so whichever
+ * package loads `pkg` first already uses those options. Returns null when there
+ * is nothing to do.
+ */
+export function passOptionsFix(text: string, pkg: string): string | null {
+  const esc = pkg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const use = new RegExp(`^[^%\\n]*\\\\usepackage\\s*\\[([^\\]]*)\\]\\s*\\{[^}]*\\b${esc}\\b[^}]*\\}`, 'm').exec(text);
+  const opts = use?.[1].replace(/\s+/g, ' ').trim();
+  if (!opts) return null;
+  const line = `\\PassOptionsToPackage{${opts}}{${pkg}}`;
+  if (text.includes(line)) return null;
+  const cls = /^[^%\n]*\\documentclass/m.exec(text);
+  if (!cls) return null;
+  return text.slice(0, cls.index) + line + '\n' + text.slice(cls.index);
 }
