@@ -90,9 +90,14 @@ export function Toggle({ checked, onChange, label, description }: { checked: boo
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={clsx('focus-ring relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors', checked ? 'bg-accent' : 'bg-line')}
+        // Flex layout (not absolute positioning): the knob's position must not depend on
+        // how the browser aligns a button's content, which differs between platforms.
+        className={clsx(
+          'focus-ring mt-0.5 inline-flex h-5 w-9 shrink-0 items-center justify-start rounded-full p-0.5 transition-colors',
+          checked ? 'bg-accent' : 'bg-line',
+        )}
       >
-        <span className={clsx('absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform', checked ? 'translate-x-4' : 'translate-x-0.5')} />
+        <span className={clsx('pointer-events-none block size-4 rounded-full bg-white shadow transition-transform', checked ? 'translate-x-4' : 'translate-x-0')} />
       </button>
     </label>
   );

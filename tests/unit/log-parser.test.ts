@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseBibtexLog, parseTexLog, summarise, toProjectPath } from '../../src/latex/log-parser';
-import { explain } from '../../src/latex/explain';
+import { explain, passOptionsFix } from '../../src/latex/explain';
+import type { Diagnostic } from '../../src/types';
 
 const log = readFileSync(resolve(process.cwd(), 'tests/unit/fixtures/errors.log'), 'utf8');
 
@@ -71,5 +72,31 @@ describe('parseBibtexLog', () => {
     expect(d.find((x) => x.severity === 'error' && x.line === 5)?.file).toBe('refs.bib');
     expect(d.some((x) => x.message.includes('database entry for "missing"'))).toBe(true);
     expect(d.some((x) => x.message.includes('nothere.bib'))).toBe(true);
+  });
+});
+
+describe('passOptionsFix', () => {
+  const doc = String.raw`%% header comment
+\documentclass{article}
+\usepackage{newtxtext}
+% \usepackage[table]{xcolor}
+\usepackage[dvipsnames,
+  svgnames]{xcolor}
+\begin{document}\end{document}`;
+
+  it('passes the document’s own options before \\documentclass', () => {
+    const fixed = passOptionsFix(doc, 'xcolor')!;
+    expect(fixed.split('\n')[1]).toBe(String.raw`\PassOptionsToPackage{dvipsnames, svgnames}{xcolor}`);
+    expect(fixed.split('\n')[2]).toBe(String.raw`\documentclass{article}`);
+    expect(passOptionsFix(fixed, 'xcolor')).toBeNull();
+  });
+
+  it('does nothing without an options list', () => {
+    expect(passOptionsFix(doc, 'newtxtext')).toBeNull();
+  });
+
+  it('offers the fix from the explanation', () => {
+    const ex = explain({ severity: 'error', message: 'LaTeX Error: Option clash for package xcolor.', file: 'main.tex', line: 5 } as Diagnostic);
+    expect(ex?.fixes).toContainEqual({ kind: 'passOptions', label: expect.any(String), pkg: 'xcolor' });
   });
 });

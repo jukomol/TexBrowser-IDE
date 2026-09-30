@@ -57,12 +57,18 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends \
             texlive-base texlive-latex-base texlive-latex-recommended texlive-latex-extra \
             texlive-fonts-recommended texlive-pictures texlive-science texlive-bibtex-extra \
-            texlive-lang-greek cm-super
+            texlive-lang-greek texlive-plain-generic tex-gyre cm-super
+          # texlive-fonts-extra is 1.7 GB: unpack it aside and shelve only the packages
+          # listed in scripts/shelf-extra-packages.txt (newtx, Libertine, Source Pro, …).
+          cd "$RUNNER_TEMP" && apt-get download texlive-fonts-extra
+          dpkg-deb -x texlive-fonts-extra_*.deb fonts-extra && rm texlive-fonts-extra_*.deb
       - name: Build package shelf
         run: |
           npm run shelf:build -- \
             --texmf /usr/share/texlive/texmf-dist --texmf /usr/share/texmf \
             --map /var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map \
+            --extra-texmf "$RUNNER_TEMP/fonts-extra/usr/share/texlive/texmf-dist" \
+            --extra-packages scripts/shelf-extra-packages.txt \
             --label "TeX Live 2023 (Ubuntu 24.04)" --budget-mb 750
 
       - name: Build site

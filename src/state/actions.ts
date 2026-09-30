@@ -16,7 +16,7 @@ import { monaco } from '../editor/monaco';
 import { parseBibtexLog, parseTexLog } from '../latex/log-parser';
 import { SyncTex } from '../latex/synctex';
 import { packageInsertion } from '../latex/analysis';
-import type { QuickFix } from '../latex/explain';
+import { passOptionsFix, type QuickFix } from '../latex/explain';
 import type { SlashCommand } from '../editor/slash-commands';
 import type { Diagnostic, Snapshot } from '../types';
 import { basename, dirname, isTextPath, joinPath, normalisePath, relativePath, stripExt } from '../utils/paths';
@@ -591,6 +591,11 @@ export function applyQuickFix(fix: QuickFix) {
     case 'openFile':
       openFile(fix.file, fix.line);
       return;
+    case 'passOptions':
+      if (ws && editFile(ws.project.mainFile, (text) => passOptionsFix(text, fix.pkg)))
+        toast({ kind: 'success', title: `Added \\PassOptionsToPackage for ${fix.pkg}` });
+      else toast({ kind: 'info', title: `No \\usepackage[…]{${fix.pkg}} with options found in the main file` });
+      break;
   }
 }
 

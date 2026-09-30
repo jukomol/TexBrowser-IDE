@@ -23,7 +23,12 @@
  *   node scripts/build-shelf.mjs \
  *     --texmf /usr/share/texlive/texmf-dist --texmf /usr/share/texmf \
  *     --map /var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map \
- *     --label "TeX Live 2023 (Ubuntu 24.04)" [--budget-mb 750] [--out public/shelf]
+ *     --label "TeX Live 2023 (Ubuntu 24.04)" [--budget-mb 750] [--out public/shelf] \
+ *     [--extra-texmf <dir> --extra-packages scripts/shelf-extra-packages.txt]
+ *
+ * --extra-texmf adds a tree (e.g. an unpacked texlive-fonts-extra, 1.7 GB) from
+ * which only the listed packages — plus whatever they require from that same
+ * tree — are shelved, keeping the site under the 1 GB GitHub Pages limit.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -35,8 +40,14 @@ import { parseDataPackageLoader, DataPackageReader } from './lib/emscripten-pack
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 
+/** A comma list, or a file with one name per line (# comments allowed). */
+function readList(arg) {
+  const text = fs.existsSync(arg) ? fs.readFileSync(arg, 'utf8') : arg.replace(/,/g, '\n');
+  return text.split('\n').map((l) => l.replace(/#.*$/, '').trim()).filter(Boolean);
+}
+
 function parseArgs(argv) {
-  const a = { texmf: [], map: [], engine: path.join(ROOT, 'public', 'engine'), out: path.join(ROOT, 'public', 'shelf'), label: 'TeX Live', budgetMb: 750, exclude: [] };
+  const a = { texmf: [], map: [], engine: path.join(ROOT, 'public', 'engine'), out: path.join(ROOT, 'public', 'shelf'), label: 'TeX Live', budgetMb: 750, exclude: [], extraTexmf: [], extraPackages: [] };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     const v = () => argv[++i];
@@ -47,6 +58,8 @@ function parseArgs(argv) {
     else if (k === '--label') a.label = v();
     else if (k === '--budget-mb') a.budgetMb = Number(v());
     else if (k === '--exclude') a.exclude.push(v());
+    else if (k === '--extra-texmf') a.extraTexmf.push(path.resolve(v()));
+    else if (k === '--extra-packages') a.extraPackages.push(...readList(v()));
     else throw new Error(`Unknown argument ${k}`);
   }
   if (!a.texmf.length) throw new Error('At least one --texmf <dir> is required');
@@ -127,7 +140,10 @@ const DEP_PATTERNS = [
   [/\\usetikzlibrary\s*\{([^}]+)\}/g, (n) => `tikzlibrary${n}.code.tex`],
   [/\\usepgflibrary\s*\{([^}]+)\}/g, (n) => `pgflibrary${n}.code.tex`],
   [/\\input\s*\{?\s*([A-Za-z0-9_.-]+\.(?:tex|def|sty|cfg))/g, (n) => n],
+  // `\input binhex` / `\input{binhex}` — no extension means .tex
+  [/\\input\s*(?:\{\s*|\s)([A-Za-z][A-Za-z0-9_-]*)(?![\w.])/g, (n) => `${n}.tex`],
 ];
+
 
 function extractDeps(text) {
   const out = new Set();
@@ -143,6 +159,67 @@ function extractDeps(text) {
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Extra trees: shelve only selected packages
+// ---------------------------------------------------------------------------
+
+/** The TeX Live package a TDS path belongs to: tex/<fmt>/<pkg>/…, fonts/<type>/<supplier>/<pkg>/…, bibtex/<t>/<pkg>/… */
+function familyOf(rel) {
+  const p = rel.split('/');
+  if (p[0] === 'fonts') return p.length >= 5 ? p[3] : p.length >= 4 ? p[2] : null;
+  return p.length >= 4 ? p[2] : null;
+}
+
+/**
+ * Pick the files of `wanted` packages from extra trees, following \RequirePackage
+ * chains into other packages of the same trees. Returns the files and the
+ * pdfTeX/dvips map files of the chosen packages (merged into the overlay map).
+ */
+function selectExtra(roots, wanted, excludes, isAvailable) {
+  const byFamily = new Map(); // family → files
+  const ownerOf = new Map(); // basename → family
+  for (const root of roots) {
+    for (const f of walk(root)) {
+      if (!classify(f.rel, excludes) && !/^fonts\/map\/(dvips|pdftex)\//.test(f.rel)) continue;
+      const fam = familyOf(f.rel);
+      if (!fam) continue;
+      if (!byFamily.has(fam)) byFamily.set(fam, []);
+      byFamily.get(fam).push(f);
+      const base = f.rel.slice(f.rel.lastIndexOf('/') + 1);
+      if (!ownerOf.has(base)) ownerOf.set(base, fam);
+    }
+  }
+  const chosen = new Set();
+  const missing = [];
+  const queue = [...wanted];
+  while (queue.length) {
+    const fam = queue.shift();
+    if (chosen.has(fam)) continue;
+    if (!byFamily.has(fam)) {
+      missing.push(fam);
+      continue;
+    }
+    chosen.add(fam);
+    for (const f of byFamily.get(fam)) {
+      if (!TEXT_EXT.test(f.rel) || f.size > 2_000_000) continue;
+      for (const dep of extractDeps(fs.readFileSync(f.abs, 'latin1'))) {
+        const owner = ownerOf.get(dep);
+        if (owner && !chosen.has(owner) && !isAvailable(dep)) queue.push(owner);
+      }
+    }
+  }
+  if (missing.length) console.warn(`  ! extra packages not found: ${missing.join(', ')}`);
+  const files = [];
+  const maps = [];
+  for (const fam of chosen) {
+    for (const f of byFamily.get(fam)) {
+      if (/^fonts\/map\/(dvips|pdftex)\/.*\.map$/.test(f.rel)) maps.push(fs.readFileSync(f.abs, 'utf8'));
+      files.push(f);
+    }
+  }
+  return { files, maps, families: [...chosen].sort() };
 }
 
 // ---------------------------------------------------------------------------
@@ -203,8 +280,19 @@ function main() {
   const groups = new Map();
   const chosen = new Map(); // basename → key (first wins)
   let skippedBase = 0;
-  for (const root of args.texmf) {
-    for (const f of walk(root)) {
+  const sources = args.texmf.map((root) => walk(root));
+  let extraMaps = [];
+  if (args.extraTexmf.length) {
+    // Anything the main trees or the engine already have is not pulled from the extras.
+    const mainNames = new Set();
+    for (const root of args.texmf) for (const f of walk(root)) mainNames.add(f.rel.slice(f.rel.lastIndexOf('/') + 1));
+    const extra = selectExtra(args.extraTexmf, args.extraPackages, args.exclude, (n) => baseNames.has(n) || mainNames.has(n));
+    console.log(`  + ${extra.families.length} packages from extra trees: ${extra.families.join(', ')}`);
+    sources.push(extra.files);
+    extraMaps = extra.maps;
+  }
+  for (const source of sources) {
+    for (const f of source) {
       const key = classify(f.rel, args.exclude);
       if (!key) continue;
       const base = f.rel.slice(f.rel.lastIndexOf('/') + 1);
@@ -279,7 +367,7 @@ function main() {
   // Overlay: merged font map (system first, then engine base for anything missing).
   const systemMaps = args.map.filter((m) => fs.existsSync(m)).map((m) => fs.readFileSync(m, 'utf8'));
   const overlayEntries = [
-    { path: 'fonts/map/pdftex/updmap/pdftex.map', data: new TextEncoder().encode(mergeMaps([...systemMaps, baseMap])) },
+    { path: 'fonts/map/pdftex/updmap/pdftex.map', data: new TextEncoder().encode(mergeMaps([...systemMaps, ...extraMaps, baseMap])) },
   ];
   const overlayGz = zlib.gzipSync(createTar(overlayEntries), { level: 9 });
   const overlayFile = `b/overlay.${hash8(overlayGz)}.tgz`;

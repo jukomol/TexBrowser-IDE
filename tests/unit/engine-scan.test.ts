@@ -32,6 +32,13 @@ describe('scanSources', () => {
     expect(r.files.has('ngerman.ldf')).toBe(true);
   });
 
+  it('fetches files probed with \\IfFileExists so the preferred branch is taken', () => {
+    const r = scanSources([String.raw`\IfFileExists{newtxtext.sty}{\usepackage{newtxtext,newtxmath}}{\usepackage{mathptmx}}
+\IfFileExists{figures/plot.pdf}{}{}`]);
+    for (const f of ['newtxtext.sty', 'newtxmath.sty', 'mathptmx.sty']) expect(r.files).toContain(f);
+    expect(r.files).not.toContain('figures/plot.pdf');
+  });
+
   it('keeps escaped percent signs', () => {
     expect(stripComments('50\\% done % comment')).toBe('50\\% done ');
   });
