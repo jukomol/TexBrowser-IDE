@@ -109,7 +109,9 @@ export const PdfViewer = forwardRef<
         ? Math.max(0.2, Math.min((box.w - PAD * 2) / maxW, (box.h - PAD * 2) / maxH))
         : zoom;
 
-  useEffect(() => onScaleChange?.(scale), [scale, onScaleChange]);
+  useEffect(() => {
+    onScaleChange?.(scale);
+  }, [scale, onScaleChange]);
 
   // ---- render visible pages ----------------------------------------------------------------------
   const renderPage = useCallback(
@@ -187,7 +189,9 @@ export const PdfViewer = forwardRef<
     onPageChange(page, sizes.length);
   }, [sizes, scale, onPageChange]);
 
-  useEffect(() => onScroll(), [onScroll]);
+  useEffect(() => {
+    onScroll();
+  }, [onScroll]);
 
   // Keep the reading position when the zoom changes.
   const lastScale = useRef(scale);

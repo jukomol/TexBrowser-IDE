@@ -377,8 +377,14 @@ function CommandPalette() {
       .map((x) => x.i);
   }, [q, items]);
 
-  useEffect(() => setSel(0), [q]);
-  useEffect(() => listRef.current?.querySelector(`[data-i="${sel}"]`)?.scrollIntoView({ block: 'nearest' }), [sel]);
+  useEffect(() => {
+    setSel(0);
+  }, [q]);
+  // Block body on purpose: newer browsers return a Promise from scrollIntoView, and an
+  // effect that returns a non-function crashes React when it runs the "cleanup".
+  useEffect(() => {
+    listRef.current?.querySelector(`[data-i="${sel}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [sel]);
 
   const run = (it?: PaletteItem) => {
     if (!it) return;

@@ -52,17 +52,47 @@ jobs:
       # Package shelf: every LaTeX package of the TeX Live collections below,
       # split into small per-package bundles that the browser fetches on demand.
       - name: Install TeX Live (shelf source)
+        timeout-minutes: 20
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends \
-            texlive-base texlive-latex-base texlive-latex-recommended texlive-latex-extra \
-            texlive-fonts-recommended texlive-pictures texlive-science texlive-bibtex-extra \
-            texlive-lang-greek texlive-plain-generic tex-gyre cm-super
-          # texlive-fonts-extra is 1.7 GB: unpack it aside and shelve only the packages
-          # listed in scripts/shelf-extra-packages.txt (newtx, Libertine, Source Pro, …).
-          cd "$RUNNER_TEMP" && apt-get download texlive-fonts-extra
-          dpkg-deb -x texlive-fonts-extra_*.deb fonts-extra && rm texlive-fonts-extra_*.deb
+          # The runner's Azure Ubuntu mirror sometimes trickles or stalls. apt's own
+          # timeouts only catch silent connections, so each attempt is capped; on a
+          # failed attempt the main Ubuntu archive is put first and apt retries,
+          # reusing the packages it already downloaded.
+          APT_OPTS="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          PKGS="texlive-base texlive-latex-base texlive-latex-recommended texlive-latex-extra
+            texlive-fonts-recommended texlive-pictures texlive-science texlive-bibtex-extra
+            texlive-lang-greek texlive-plain-generic tex-gyre cm-super"
+          sudo apt-get $APT_OPTS update -qq
+          for attempt in 1 2 3; do
+            if sudo timeout 300 apt-get $APT_OPTS install -y -qq --no-install-recommends $PKGS; then break; fi
+            [ "$attempt" = 3 ] && { echo "::error::apt install failed 3 times"; exit 1; }
+            echo "::warning::apt install attempt $attempt failed or stalled; switching mirrors and retrying"
+            if [ -f /etc/apt/apt-mirrors.txt ]; then
+              printf 'http://archive.ubuntu.com/ubuntu/\tpriority:1\nhttp://us.archive.ubuntu.com/ubuntu/\tpriority:2\nhttp://azure.archive.ubuntu.com/ubuntu/\tpriority:3\n' \
+                | sudo tee /etc/apt/apt-mirrors.txt
+            fi
+            sudo dpkg --configure -a || true
+            sudo apt-get $APT_OPTS update -qq
+          done
+          echo "FONTS_EXTRA_VERSION=$(apt-cache show --no-all-versions texlive-fonts-extra | sed -n 's/^Version: //p')" >> "$GITHUB_ENV"
+
+      # texlive-fonts-extra is 1.7 GB (a 629 MB download): it is cached between runs,
+      # unpacked aside, and only the packages listed in scripts/shelf-extra-packages.txt
+      # (newtx, Libertine, Source Pro, …) are shelved.
+      - name: Cache texlive-fonts-extra
+        id: fonts-extra
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/texlive-fonts-extra.deb
+          key: texlive-fonts-extra-${{ env.FONTS_EXTRA_VERSION }}
+      - name: Download texlive-fonts-extra
+        if: steps.fonts-extra.outputs.cache-hit != 'true'
+        timeout-minutes: 20
+        run: scripts/ci/download-deb.sh texlive-fonts-extra "$RUNNER_TEMP/texlive-fonts-extra.deb"
+      - name: Unpack texlive-fonts-extra
+        run: dpkg-deb -x "$RUNNER_TEMP/texlive-fonts-extra.deb" "$RUNNER_TEMP/fonts-extra"
       - name: Build package shelf
+        timeout-minutes: 10
         run: |
           npm run shelf:build -- \
             --texmf /usr/share/texlive/texmf-dist --texmf /usr/share/texmf \
@@ -75,6 +105,7 @@ jobs:
         run: npm run build
 
       - name: End-to-end tests (real engine, headless Chromium)
+        timeout-minutes: 20
         run: |
           npx playwright install --with-deps chromium
           npm run e2e -- --prod
