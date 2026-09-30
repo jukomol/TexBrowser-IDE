@@ -14,10 +14,21 @@ uri=${uri//\'/}
 algo=$(echo "${hash%%:*}" | tr '[:upper:]' '[:lower:]')
 algo=${algo%sum}   # MD5Sum → md5
 expected=${hash#*:}
-path=${uri#*/ubuntu/}
+path="pool/${uri#*/pool/}"
 
-mirrors=(
-  "$uri"
+mirrors=()
+if [[ "$uri" == mirror+file:* ]]; then
+  # GitHub runners: "mirror+file:/etc/apt/apt-mirrors.txt/pool/…" — the file lists
+  # the real mirrors, one per line ("<url>[<tab>priority:N]").
+  list=${uri#mirror+file:}
+  list=${list%%/pool/*}
+  while read -r base _; do
+    [[ "$base" == http* ]] && mirrors+=("${base%/}/$path")
+  done < <(grep -v '^#' "$list" || true)
+elif [[ "$uri" == http* ]]; then
+  mirrors+=("$uri")
+fi
+mirrors+=(
   "http://archive.ubuntu.com/ubuntu/$path"
   "http://us.archive.ubuntu.com/ubuntu/$path"
   "https://mirrors.edge.kernel.org/ubuntu/$path"
