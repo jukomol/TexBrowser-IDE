@@ -149,6 +149,22 @@ await step('command palette opens and runs commands', async () => {
   await page.getByText('≈', { exact: false }).first().waitFor();
 });
 
+await step('command palette stays usable while open (button and Ctrl+P)', async () => {
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: /Commands/ }).click();
+  await page.getByPlaceholder('Type a command, file or /block…').waitFor();
+  await page.waitForTimeout(4000);
+  const alive = await page.evaluate(() => document.getElementById('root').childElementCount > 0 && !!document.querySelector('.monaco-editor'));
+  assert(alive, 'app unmounted while the palette was open');
+  const blur = await page.evaluate(() => getComputedStyle(document.querySelector('[role=dialog]').parentElement).backdropFilter);
+  assert(!blur || blur === 'none', `dialog backdrop uses backdrop-filter (${blur})`);
+  await page.keyboard.press('Escape');
+  await page.locator('.monaco-editor textarea').first().focus();
+  await page.keyboard.press('Control+P');
+  await page.getByPlaceholder('Type a command, file or /block…').waitFor();
+  await page.keyboard.press('Escape');
+});
+
 await step('theme switch to light and back', async () => {
   await page.evaluate(() => window.__TEXBROWSER__.actions.setTheme('light'));
   assert((await page.evaluate(() => document.documentElement.dataset.theme)) === 'light', 'not light');

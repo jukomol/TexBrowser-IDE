@@ -18,11 +18,22 @@ import { languageFor } from '../utils/paths';
 import { WizardDialog } from './Wizards';
 import { Button, Kbd, Modal, TextInput, Toggle, clsx } from './ui';
 import { FileIcon } from './FileIcon';
+import { ErrorBoundary } from './ErrorBoundary';
 
 export function Dialogs() {
   const dialog = useStore((s) => s.dialog);
   if (!dialog) return null;
-  return <DialogSwitch dialog={dialog} />;
+  // A dialog that throws closes itself instead of taking the whole IDE down with it.
+  return (
+    <ErrorBoundary area="dialog" onError={onDialogError}>
+      <DialogSwitch dialog={dialog} />
+    </ErrorBoundary>
+  );
+}
+
+function onDialogError(error: Error) {
+  closeDialog();
+  toast({ kind: 'error', title: 'That dialog hit an error and was closed', message: error.message });
 }
 
 function DialogSwitch({ dialog }: { dialog: Dialog }) {
