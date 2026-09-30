@@ -12,6 +12,7 @@ import { StatusBar } from './components/StatusBar';
 import { Dialogs } from './components/Dialogs';
 import { Toasts } from './components/Toasts';
 import { Spinner } from './components/ui';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { editorBridge } from './editor/bridge';
 
 function useCompact() {
@@ -82,10 +83,16 @@ export default function App() {
       initial={220}
       min={90}
       collapsed={!bottom}
-      first={<EditorPane />}
+      first={<ErrorBoundary area="editor"><EditorPane /></ErrorBoundary>}
       second={<BottomPanel />}
       className="h-full"
     />
+  );
+
+  const pdfPane = (
+    <ErrorBoundary area="PDF preview">
+      <PdfPane />
+    </ErrorBoundary>
   );
 
   return (
@@ -103,9 +110,9 @@ export default function App() {
           className="min-w-0 flex-1"
           second={
             compact ? (
-              <div className="h-full">{mobileView === 'editor' ? editorAndLog : <PdfPane />}</div>
+              <div className="h-full">{mobileView === 'editor' ? editorAndLog : pdfPane}</div>
             ) : (
-              <SplitPane id="editor-pdf" initial={0.5} min={280} first={editorAndLog} second={<PdfPane />} className="h-full" />
+              <SplitPane id="editor-pdf" initial={0.5} min={280} first={editorAndLog} second={pdfPane} className="h-full" />
             )
           }
         />

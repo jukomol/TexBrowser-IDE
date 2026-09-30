@@ -140,8 +140,10 @@ export function Modal({
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [onClose]);
+  // No backdrop-filter on the overlay: re-blurring the whole window whenever the editor,
+  // progress bar or PDF canvases repaint underneath can blank the screen on some GPUs.
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-[8vh] backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-[8vh]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div role="dialog" aria-modal className={clsx('animate-pop w-full overflow-hidden rounded-xl border border-line bg-panel shadow-pop', width)}>
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
           {icon}
