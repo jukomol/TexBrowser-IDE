@@ -34,7 +34,9 @@ export function PdfPane() {
   const [scale, setScale] = useState(1);
   const viewer = useRef<PdfViewerHandle>(null);
 
-  useEffect(() => localStorage.setItem('texbrowser.pdfZoom', String(zoom)), [zoom]);
+  useEffect(() => {
+    localStorage.setItem('texbrowser.pdfZoom', String(zoom));
+  }, [zoom]);
   useEffect(() => {
     const t = setTimeout(() => void loadViewer().catch(() => undefined), 500);
     return () => clearTimeout(t);
@@ -198,7 +200,9 @@ function ErrorOverlay({ diagnostics, hasPdf, stale }: { diagnostics: Diagnostic[
   const first = errors[0];
   const ex = first ? explain(first) : null;
 
-  useEffect(() => setCollapsed(hasPdf && !stale), [hasPdf, stale, first?.message]);
+  useEffect(() => {
+    setCollapsed(hasPdf && !stale);
+  }, [hasPdf, stale, first?.message]);
 
   if (status === 'crashed' && error) {
     return (

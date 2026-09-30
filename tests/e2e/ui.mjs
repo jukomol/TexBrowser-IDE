@@ -8,6 +8,17 @@ const OUT = 'tests/e2e/out';
 fs.mkdirSync(OUT, { recursive: true });
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1600, height: 950 }, acceptDownloads: true });
+// Behave like current Chrome, whose scroll methods return Promises (an effect that
+// returned scrollIntoView()'s result crashed the command palette there).
+await context.addInitScript(() => {
+  for (const name of ['scrollIntoView', 'scrollTo', 'scrollBy']) {
+    const orig = Element.prototype[name];
+    Element.prototype[name] = function (...args) {
+      orig.apply(this, args);
+      return Promise.resolve();
+    };
+  }
+});
 const page = await context.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
@@ -153,7 +164,12 @@ await step('command palette stays usable while open (button and Ctrl+P)', async 
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /Commands/ }).click();
   await page.getByPlaceholder('Type a command, file or /block…').waitFor();
-  await page.waitForTimeout(4000);
+  // Move through the list (changes the highlighted item, re-running its scroll effect).
+  const box = await page.getByRole('dialog').boundingBox();
+  for (let y = box.y + 120; y < box.y + 320; y += 20) await page.mouse.move(box.x + 150, y);
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(3000);
+  assert((await S()).dialog === 'command-palette', 'the palette closed itself (a dialog error?)');
   const alive = await page.evaluate(() => document.getElementById('root').childElementCount > 0 && !!document.querySelector('.monaco-editor'));
   assert(alive, 'app unmounted while the palette was open');
   const blur = await page.evaluate(() => getComputedStyle(document.querySelector('[role=dialog]').parentElement).backdropFilter);
