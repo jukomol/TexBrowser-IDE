@@ -1,0 +1,104 @@
+# Builds TexBrowser IDE and publishes it to GitHub Pages.
+#
+# Every push and pull request gets the full build and test run (unit tests,
+# engine and UI end-to-end tests in headless Chromium). Only the default branch,
+# or a manual run, deploys.
+#
+# One-time setup: Settings → Pages → Build and deployment → Source: "GitHub Actions".
+name: Build & deploy
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck & unit tests
+        run: |
+          npm run typecheck
+          npm test
+
+      # WebAssembly TeX engine (BusyTeX, TeX Live 2022): ~180 MB of assets pinned
+      # to an exact upstream commit and verified by SHA-256.
+      - name: Cache engine assets
+        uses: actions/cache@v4
+        with:
+          path: public/engine
+          key: engine-${{ hashFiles('scripts/fetch-engine.mjs') }}
+      - name: Fetch engine
+        run: npm run engine:fetch
+
+      # Package shelf: every LaTeX package of the TeX Live collections below,
+      # split into small per-package bundles that the browser fetches on demand.
+      - name: Install TeX Live (shelf source)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            texlive-base texlive-latex-base texlive-latex-recommended texlive-latex-extra \
+            texlive-fonts-recommended texlive-pictures texlive-science texlive-bibtex-extra \
+            texlive-lang-greek cm-super
+      - name: Build package shelf
+        run: |
+          npm run shelf:build -- \
+            --texmf /usr/share/texlive/texmf-dist --texmf /usr/share/texmf \
+            --map /var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map \
+            --label "TeX Live 2023 (Ubuntu 24.04)" --budget-mb 750
+
+      - name: Build site
+        run: npm run build
+
+      - name: End-to-end tests (real engine, headless Chromium)
+        run: |
+          npx playwright install --with-deps chromium
+          npm run e2e -- --prod
+
+      - name: Upload e2e screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: tests/e2e/out/*.png
+          if-no-files-found: ignore
+
+      - name: Report size
+        run: du -sh dist dist/engine dist/shelf
+
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

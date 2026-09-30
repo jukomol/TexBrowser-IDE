@@ -1,0 +1,223 @@
+@import "tailwindcss";
+
+/* Theme tokens: dark-first, with a light theme. Components use semantic
+   colour names (bg-panel, text-muted, border-line, …) so both themes work. */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+@theme inline {
+  --color-bg: var(--c-bg);
+  --color-panel: var(--c-panel);
+  --color-panel-2: var(--c-panel-2);
+  --color-hover: var(--c-hover);
+  --color-line: var(--c-line);
+  --color-fg: var(--c-fg);
+  --color-muted: var(--c-muted);
+  --color-faint: var(--c-faint);
+  --color-accent: var(--c-accent);
+  --color-accent-2: var(--c-accent-2);
+  --color-accent-fg: var(--c-accent-fg);
+  --color-danger: var(--c-danger);
+  --color-warn: var(--c-warn);
+  --color-ok: var(--c-ok);
+  --color-info: var(--c-info);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --font-serif: "Latin Modern Roman", "CMU Serif", Georgia, "Times New Roman", serif;
+}
+
+:root {
+  --c-bg: #eef0f6;
+  --c-panel: #ffffff;
+  --c-panel-2: #f5f6fa;
+  --c-hover: #e9ecf4;
+  --c-line: #dde1eb;
+  --c-fg: #161b26;
+  --c-muted: #566074;
+  --c-faint: #8b93a6;
+  --c-accent: #5b4cf0;
+  --c-accent-2: #0891b2;
+  --c-accent-fg: #ffffff;
+  --c-danger: #dc2626;
+  --c-warn: #b45309;
+  --c-ok: #059669;
+  --c-info: #2563eb;
+  --shadow-pop: 0 16px 48px -12px rgb(15 23 42 / 0.28), 0 0 0 1px rgb(15 23 42 / 0.06);
+}
+
+[data-theme='dark'] {
+  --c-bg: #090b10;
+  --c-panel: #0f1219;
+  --c-panel-2: #141923;
+  --c-hover: #1b2130;
+  --c-line: #222939;
+  --c-fg: #e6e9f1;
+  --c-muted: #8e97aa;
+  --c-faint: #5d6579;
+  --c-accent: #7c6cff;
+  --c-accent-2: #22d3ee;
+  --c-accent-fg: #ffffff;
+  --c-danger: #f87171;
+  --c-warn: #fbbf24;
+  --c-ok: #34d399;
+  --c-info: #60a5fa;
+  --shadow-pop: 0 20px 60px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.06);
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--c-bg);
+  color: var(--c-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* Scrollbars that match the theme */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-line) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--c-line);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.shadow-pop {
+  box-shadow: var(--shadow-pop);
+}
+
+.brand-gradient {
+  background-image: linear-gradient(135deg, var(--c-accent), var(--c-accent-2));
+}
+
+.brand-text {
+  background-image: linear-gradient(135deg, var(--c-accent), var(--c-accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Focus ring used by all interactive elements */
+.focus-ring:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 1px;
+}
+
+/* Split-pane gutters */
+.gutter {
+  background: transparent;
+  transition: background 0.15s;
+}
+.gutter:hover,
+.gutter[data-dragging='true'] {
+  background: var(--c-accent);
+}
+
+/* PDF pages */
+.pdf-page {
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25), 0 8px 24px -8px rgb(0 0 0 / 0.35);
+}
+.pdf-dark .pdf-page canvas {
+  filter: invert(0.9) hue-rotate(180deg) contrast(0.9);
+}
+.synctex-flash {
+  animation: synctex-flash 1.8s ease-out forwards;
+}
+@keyframes synctex-flash {
+  0% { background: rgb(124 108 255 / 0.45); outline: 2px solid rgb(124 108 255 / 0.9); }
+  100% { background: rgb(124 108 255 / 0); outline: 2px solid rgb(124 108 255 / 0); }
+}
+
+/* pdf.js text layer (ported from pdf_viewer.css): transparent text over the
+   canvas for selection and copy. Relies on --total-scale-factor on the page. */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  text-align: initial;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent {
+  display: contents;
+}
+.textLayer ::selection {
+  background: rgb(124 108 255 / 0.35);
+}
+
+/* Monaco: glyph margin markers for compile diagnostics */
+.tb-glyph-error::before,
+.tb-glyph-warning::before {
+  content: '';
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  margin: 6px 0 0 6px;
+}
+.tb-glyph-error::before { background: var(--c-danger); }
+.tb-glyph-warning::before { background: var(--c-warn); }
+.tb-synctex-line {
+  background: rgb(124 108 255 / 0.18);
+}
+
+/* KaTeX hover preview inherits text colour */
+.katex-preview .katex {
+  font-size: 1.15em;
+  color: var(--c-fg);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.animate-pop {
+  animation: fade-in 0.14s ease-out;
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.progress-indeterminate {
+  background: linear-gradient(90deg, transparent, var(--c-accent), var(--c-accent-2), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
