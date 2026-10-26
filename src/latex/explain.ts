@@ -202,6 +202,22 @@ export function explain(d: Diagnostic): Explanation | null {
     return { title: 'Compilation stopped', detail: 'TeX stopped after an earlier error. Fix the first error in the list — the rest often disappear.', fixes };
   }
 
+  const bibOpen = /BibTeX: couldn't open (style|database) file (\S+)/.exec(msg);
+  if (bibOpen) {
+    const file = bibOpen[2];
+    return bibOpen[1] === 'style'
+      ? {
+          title: `Bibliography style ${file} not found`,
+          detail: `\\bibliographystyle{${file.replace(/\.bst$/, '')}} names a BibTeX style that is neither in the project nor in the package library, so every citation stays undefined. Check the spelling, or upload the journal's .bst file into the project next to the main file.`,
+          fixes,
+        }
+      : {
+          title: `Bibliography file ${file} not found`,
+          detail: `\\bibliography{…} names ${file}, which isn't in the project. Upload the .bib file, or correct the name or path (relative to the main file; the .bib extension is optional).`,
+          fixes,
+        };
+  }
+
   if (/Undefined (citation|reference)|Citation .* undefined|Reference .* undefined/.test(msg)) {
     return {
       title: /itation/.test(msg) ? 'Unknown citation key' : 'Unknown reference',

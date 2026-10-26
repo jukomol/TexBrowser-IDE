@@ -61,7 +61,7 @@ jobs:
           APT_OPTS="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
           PKGS="texlive-base texlive-latex-base texlive-latex-recommended texlive-latex-extra
             texlive-fonts-recommended texlive-pictures texlive-science texlive-bibtex-extra
-            texlive-lang-greek texlive-plain-generic tex-gyre cm-super"
+            texlive-lang-greek texlive-plain-generic texlive-publishers tex-gyre cm-super"
           sudo apt-get $APT_OPTS update -qq
           for attempt in 1 2 3; do
             if sudo timeout 300 apt-get $APT_OPTS install -y -qq --no-install-recommends $PKGS; then break; fi
