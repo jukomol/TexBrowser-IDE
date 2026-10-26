@@ -22,7 +22,17 @@ export type Dialog =
   | { type: 'shortcuts' }
   | { type: 'wizard'; wizard: Wizard }
   | { type: 'prompt'; title: string; label: string; value: string; placeholder?: string; confirm: string; onSubmit: (v: string) => void | Promise<void> }
-  | { type: 'confirm'; title: string; message: string; confirm: string; danger?: boolean; onConfirm: () => void | Promise<void> }
+  | {
+      type: 'confirm';
+      title: string;
+      message: string;
+      confirm: string;
+      danger?: boolean;
+      onConfirm: () => void | Promise<void>;
+      /** An optional second choice shown next to the main one (e.g. "Keep both"). */
+      alternative?: { label: string; onSelect: () => void | Promise<void> };
+    }
+  | { type: 'open-github' }
   | { type: 'diff'; title: string; path: string; original: string; modified: string; onRestore?: () => void };
 
 export interface Toast {

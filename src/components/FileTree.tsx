@@ -2,7 +2,7 @@
  * Project explorer: folders, files, context menus, drag-to-move and
  * drag-and-drop upload from the operating system.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { clsx } from 'clsx';
 import { ChevronRight, FilePlus2, FolderPlus, Upload, FolderUp, Star, Pencil, Trash2, Download, FileInput, Play } from 'lucide-react';
 import { useStore } from '../state/store';
@@ -15,6 +15,7 @@ import { basename, dirname, joinPath } from '../utils/paths';
 import { KEEP } from '../state/workspace';
 import { FileIcon, FolderIcon } from './FileIcon';
 import { IconButton, SectionTitle, useMenu, EmptyState, type MenuItem } from './ui';
+import { DROP_ZONE_ATTR, useFileDragActive } from '../utils/file-drag';
 
 interface TreeNode {
   name: string;
@@ -51,6 +52,11 @@ export function FileTree() {
   const mainFile = useStore((s) => s.project?.mainFile);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  // A drag that ends anywhere (dropped, cancelled, left the window) clears the highlight.
+  const fileDrag = useFileDragActive();
+  useEffect(() => {
+    if (!fileDrag) setDropTarget(null);
+  }, [fileDrag]);
   const menu = useMenu();
 
   const tree = useMemo(() => {
@@ -177,7 +183,7 @@ export function FileTree() {
     });
 
   return (
-    <div className="flex h-full flex-col" {...dropProps('')}>
+    <div className="flex h-full flex-col" {...{ [DROP_ZONE_ATTR]: '' }} {...dropProps('')}>
       <SectionTitle
         actions={
           <>
@@ -191,10 +197,19 @@ export function FileTree() {
         Files
       </SectionTitle>
       <div
-        className={clsx('min-h-0 flex-1 overflow-y-auto px-1.5 pb-4', dropTarget === '' && 'bg-accent/5')}
+        className={clsx(
+          'relative min-h-0 flex-1 overflow-y-auto px-1.5 pb-4 transition-colors',
+          fileDrag && 'm-1 rounded-lg outline-dashed outline-2 -outline-offset-2',
+          fileDrag && (dropTarget === '' ? 'bg-accent/10 outline-accent' : 'bg-accent/5 outline-accent/50'),
+        )}
         onContextMenu={(e) => e.target === e.currentTarget && menu.open(e, folderMenu(''))}
         role="tree"
       >
+        {fileDrag && (
+          <div className="pointer-events-none sticky top-0 z-10 mb-1 rounded-md bg-accent/90 px-2 py-1.5 text-center text-[11.5px] font-medium text-white shadow">
+            Drop files here — onto a folder to put them inside it
+          </div>
+        )}
         {tree.length ? render(tree, 0) : <EmptyState icon={<FilePlus2 className="size-8" />} title="Empty project">Create a file or drop some here.</EmptyState>}
         <div className="px-2 pt-3 text-[11px] leading-relaxed text-faint">Drop images, .bib or .tex files here. Right-click for more options.</div>
       </div>

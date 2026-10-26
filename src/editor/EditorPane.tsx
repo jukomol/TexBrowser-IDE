@@ -15,7 +15,7 @@ import { SlashMenu, MathPreview } from './SlashMenu';
 import { filterSlash, SLASH_COMMANDS, type SlashCommand } from './slash-commands';
 import { useStore, getState, setState, openDialog } from '../state/store';
 import {
-  applyMarkers, applyQuickFix, closeTab, compile, ensurePackage, forwardSearch, openFile, runSlashCommand, uploadFiles, workspace, downloadActive,
+  applyMarkers, applyQuickFix, closeTab, compile, ensurePackage, forwardSearch, openFile, runSlashCommand, workspace, downloadActive,
 } from '../state/actions';
 import { basename, extname, isImagePath } from '../utils/paths';
 import { formatBytes, modKey } from '../utils/misc';
@@ -55,7 +55,6 @@ export function EditorPane() {
   const slashRef = useRef<SlashState | null>(null);
   slashRef.current = slash;
   const [math, setMath] = useState<{ tex: string; display: boolean; x: number; y: number } | null>(null);
-  const [dragOver, setDragOver] = useState(false);
   const slashKey = useRef<monaco.editor.IContextKey<boolean> | null>(null);
 
   const file = activePath ? workspace()?.get(activePath) : undefined;
@@ -100,6 +99,8 @@ export function EditorPane() {
       renderLineHighlight: 'all',
       scrollBeyondLastLine: false,
       smoothScrolling: true,
+      // Dropped files belong in the file tree; never paste their names into the source.
+      dropIntoEditor: { enabled: false },
       cursorBlinking: 'smooth',
       cursorSmoothCaretAnimation: 'on',
       bracketPairColorization: { enabled: true },
@@ -328,13 +329,6 @@ export function EditorPane() {
     return () => clearTimeout(t);
   }, [reveal, activePath]);
 
-  // ---- drag & drop files into the project ------------------------------------------------------
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    if (e.dataTransfer.files.length) void uploadFiles(e.dataTransfer.files);
-  };
-
   const fmt = (id: string) => () => {
     const cmd = SLASH_COMMANDS.find((c) => c.id === id);
     if (!cmd) return;
@@ -343,18 +337,8 @@ export function EditorPane() {
   };
 
   return (
-    <div
-      ref={paneRef}
-      className="relative flex h-full min-h-0 flex-col bg-panel"
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes('Files')) {
-          e.preventDefault();
-          setDragOver(true);
-        }
-      }}
-      onDragLeave={(e) => e.currentTarget === e.target && setDragOver(false)}
-      onDrop={onDrop}
-    >
+    // Files are dropped onto the file tree in the sidebar, not here (see utils/file-drag).
+    <div ref={paneRef} className="relative flex h-full min-h-0 flex-col bg-panel">
       {/* Tabs */}
       <div className="flex h-9 shrink-0 items-stretch overflow-x-auto border-b border-line bg-panel-2/60" role="tablist">
         {openTabs.map((p) => (
@@ -428,7 +412,7 @@ export function EditorPane() {
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-6">
           {!activePath || !file ? (
             <EmptyState icon={<FileText className="size-10" />} title="No file open">
-              Pick a file in the sidebar, or drop files here to add them to the project.
+              Pick a file in the sidebar. To add files, drop them onto the file list or use its upload button.
             </EmptyState>
           ) : isImagePath(activePath) ? (
             <BinaryPreview path={activePath} data={file.data} />
@@ -454,11 +438,6 @@ export function EditorPane() {
         </div>
       )}
 
-      {dragOver && (
-        <div className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-xl border-2 border-dashed border-accent bg-accent/10 text-sm font-medium text-accent">
-          Drop files to add them to the project
-        </div>
-      )}
     </div>
   );
 }

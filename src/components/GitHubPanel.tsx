@@ -111,9 +111,10 @@ export function GitHubPanel() {
           </div>
         )}
 
-        {token && user && <ProjectSync login={user.login} />}
-
+        {/* Starting from a repository is the common case: offer it before linking. */}
         <OpenRemote />
+
+        {token && user && <ProjectSync login={user.login} />}
       </div>
     </div>
   );
@@ -227,6 +228,9 @@ function LinkRepo({ login }: { login: string }) {
         <div className="flex items-center gap-2 font-medium text-fg">
           <Link2 className="size-4 text-accent" /> Link this project to a repository
         </div>
+        <p className="text-[11.5px] leading-relaxed text-faint">
+          Syncs the files of the project that is open now. To work on a repository&apos;s files, use “Open from GitHub as a new project” above instead.
+        </p>
         <TextInput placeholder="Search your repositories…" value={filter} onChange={(e) => setFilter(e.target.value)} />
         <div className="max-h-44 overflow-y-auto rounded-md border border-line">
           {!repos ? (
