@@ -70,6 +70,83 @@ Cite \cite{knuth}.
     },
     expect: { status: ['success', 'warnings'], fetchedIncludes: 'biblatex', logExcludes: ['undefined references'] },
   },
+  // A journal manuscript: natbib + Elsevier's Harvard style from texlive-publishers.
+  // The style is only on the shelf, so BibTeX must fetch it and rerun.
+  'elsarticle-harv': {
+    engine: 'pdftex',
+    files: {
+      'main.tex': String.raw`\documentclass[10pt,twocolumn]{article}
+\usepackage[T1]{fontenc}
+\usepackage[authoryear,round]{natbib}
+\usepackage{hyperref}
+\begin{document}
+Safety studies \citep{douphrate2009,lowndes2024} and \citet{mcnemar1947}.
+\bibliographystyle{elsarticle-harv}
+\bibliography{references}
+\end{document}`,
+      'references.bib': String.raw`@article{douphrate2009, author={Douphrate, David I. and Rosecrance, John C.}, title={Agricultural injuries}, journal={Journal of Agromedicine}, volume={14}, pages={1--10}, year={2009}}
+@inproceedings{lowndes2024, author={Lowndes, Bethany and Yoder, Aaron}, title={Tractor ingress and egress}, booktitle={Proc. ASABE AIM}, year={2024}}
+@article{mcnemar1947, author={McNemar, Quinn}, title={Note on the sampling error of the difference between correlated proportions}, journal={Psychometrika}, volume={12}, number={2}, pages={153--157}, year={1947}}`,
+    },
+    expect: {
+      status: ['success', 'warnings'],
+      fetchedIncludes: 'elsarticle',
+      logIncludes: ['main.bbl'],
+      logExcludes: ['There were undefined citations', 'Citation `douphrate2009'],
+      passesAtLeast: 2,
+    },
+  },
+  // A style that is missing at first and added to the project afterwards: the failed
+  // BibTeX run must not be remembered as done (that left citations undefined for good).
+  'bst-added-later': {
+    engine: 'pdftex',
+    files: {
+      'main.tex': String.raw`\documentclass{article}
+\usepackage{natbib}
+\begin{document}
+See \citep{knuth}.
+\bibliographystyle{mystyle}
+\bibliography{refs}
+\end{document}`,
+      'refs.bib': `@book{knuth, title={The TeXbook}, author={Knuth}, year={1984}}`,
+    },
+    expect: { status: ['errors'], logIncludes: ['There were undefined citations'] },
+    then: {
+      label: 'mystyle.bst uploaded',
+      files: {
+        'mystyle.bst': String.raw`ENTRY { title } {} {}
+FUNCTION {default.type} { "\bibitem[Knuth(1984)]{" cite$ * "} " * title * write$ newline$ }
+FUNCTION {book} { default.type }
+READ
+FUNCTION {begin.bib} { "\begin{thebibliography}{9}" write$ newline$ }
+EXECUTE {begin.bib}
+ITERATE {call.type$}
+FUNCTION {end.bib} { "\end{thebibliography}" write$ newline$ }
+EXECUTE {end.bib}`,
+      },
+      expect: { status: ['success', 'warnings'], stepsInclude: 'bibtex8', logExcludes: ['There were undefined citations'] },
+    },
+  },
+  elsarticle: {
+    engine: 'pdftex',
+    files: {
+      'main.tex': String.raw`\documentclass[preprint,12pt]{elsarticle}
+\begin{document}
+\begin{frontmatter}
+\title{A test manuscript}
+\author{A. N. Author}
+\begin{abstract}Abstract text.\end{abstract}
+\end{frontmatter}
+As shown in \cite{knuth}.
+\bibliographystyle{elsarticle-num}
+\bibliography{refs}
+\end{document}`,
+      'refs.bib': `@book{knuth, author={Donald E. Knuth}, title={The TeXbook}, publisher={Addison-Wesley}, year={1984}}`,
+    },
+    // The elsarticle bundle may already be mounted by the previous document, so check
+    // what was loaded rather than what was fetched.
+    expect: { status: ['success', 'warnings'], logIncludes: ['elsarticle.cls', 'main.bbl'], logExcludes: ['There were undefined citations', 'not found'] },
+  },
   xelatex: {
     engine: 'xetex',
     files: {

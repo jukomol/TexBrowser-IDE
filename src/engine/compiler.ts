@@ -247,6 +247,7 @@ export class TexCompiler {
     let passes = 0;
     let resolveRounds = 0;
     let bibtexLog: string | null = null;
+    let bibtexFailed = false;
     let log = '';
     let lastExit = 0;
     const maxPasses = Math.max(1, Math.min(req.maxPasses, 8));
@@ -299,8 +300,12 @@ export class TexCompiler {
               bibtexLog = host.readText(out('blg'));
             }
           }
-          this.lastBibtexKey = key;
-          if (code <= 1 && passes < maxPasses) continue; // exit 1 = warnings only
+          // Remember the inputs only when BibTeX succeeded (exit 1 = warnings only). After a
+          // failure — e.g. a style that was missing — the next compile must run it again
+          // rather than keep the empty .bbl it left behind.
+          bibtexFailed = code > 1;
+          this.lastBibtexKey = bibtexFailed ? null : key;
+          if (!bibtexFailed && passes < maxPasses) continue;
         }
       }
 
@@ -338,7 +343,7 @@ export class TexCompiler {
     }
 
     const pdf = host.readBytes(out('pdf'));
-    const hasErrors = /^(! |.+:\d+: )/m.test(log) || lastExit !== 0;
+    const hasErrors = /^(! |.+:\d+: )/m.test(log) || lastExit !== 0 || bibtexFailed;
     const hasWarnings = /(LaTeX|Package|Class) [\w-]* ?Warning|Overfull|Underfull/.test(log);
     const status = !pdf ? 'failed' : hasErrors ? 'errors' : hasWarnings ? 'warnings' : 'success';
 
@@ -370,9 +375,15 @@ function bibtexKey(aux: string, req: CompileRequest): string {
     .filter((l) => /^\\(citation|bibdata|bibstyle)\{/.test(l))
     .join('\n');
   const dbs = /\\bibdata\{([^}]*)\}/.exec(aux)?.[1].split(',') ?? [];
+  const style = /\\bibstyle\{([^}]*)\}/.exec(aux)?.[1].trim();
+  // The .bib databases and a project-local .bst both change BibTeX's output.
   const bibFingerprints = req.files
-    .filter((f) => f.path.endsWith('.bib') && dbs.some((d) => f.path.endsWith(d.endsWith('.bib') ? d : `${d}.bib`)))
-    .map((f) => fingerprint(f.data))
+    .filter(
+      (f) =>
+        (f.path.endsWith('.bib') && dbs.some((d) => f.path.endsWith(d.endsWith('.bib') ? d : `${d}.bib`))) ||
+        (style && f.path.endsWith(`${style}.bst`)),
+    )
+    .map((f) => `${f.path}:${fingerprint(f.data)}`)
     .join(',');
   return fingerprint(relevant) + '|' + bibFingerprints;
 }

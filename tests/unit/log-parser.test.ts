@@ -100,3 +100,17 @@ describe('passOptionsFix', () => {
     expect(ex?.fixes).toContainEqual({ kind: 'passOptions', label: expect.any(String), pkg: 'xcolor' });
   });
 });
+
+describe('BibTeX file errors', () => {
+  it('explains a missing bibliography style instead of blaming the citation keys', () => {
+    const [d] = parseBibtexLog("I couldn't open style file elsarticle-harv.bst\n---line 3 of file main.aux\n");
+    const ex = explain(d);
+    expect(ex?.title).toBe('Bibliography style elsarticle-harv.bst not found');
+    expect(ex?.detail).toContain('\\bibliographystyle{elsarticle-harv}');
+  });
+
+  it('explains a missing .bib database', () => {
+    const [d] = parseBibtexLog("I couldn't open database file references.bib\n");
+    expect(explain(d)?.title).toBe('Bibliography file references.bib not found');
+  });
+});
