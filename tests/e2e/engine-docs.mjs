@@ -96,6 +96,37 @@ Safety studies \citep{douphrate2009,lowndes2024} and \citet{mcnemar1947}.
       passesAtLeast: 2,
     },
   },
+  // A style that is missing at first and added to the project afterwards: the failed
+  // BibTeX run must not be remembered as done (that left citations undefined for good).
+  'bst-added-later': {
+    engine: 'pdftex',
+    files: {
+      'main.tex': String.raw`\documentclass{article}
+\usepackage{natbib}
+\begin{document}
+See \citep{knuth}.
+\bibliographystyle{mystyle}
+\bibliography{refs}
+\end{document}`,
+      'refs.bib': `@book{knuth, title={The TeXbook}, author={Knuth}, year={1984}}`,
+    },
+    expect: { status: ['errors'], logIncludes: ['There were undefined citations'] },
+    then: {
+      label: 'mystyle.bst uploaded',
+      files: {
+        'mystyle.bst': String.raw`ENTRY { title } {} {}
+FUNCTION {default.type} { "\bibitem[Knuth(1984)]{" cite$ * "} " * title * write$ newline$ }
+FUNCTION {book} { default.type }
+READ
+FUNCTION {begin.bib} { "\begin{thebibliography}{9}" write$ newline$ }
+EXECUTE {begin.bib}
+ITERATE {call.type$}
+FUNCTION {end.bib} { "\end{thebibliography}" write$ newline$ }
+EXECUTE {end.bib}`,
+      },
+      expect: { status: ['success', 'warnings'], stepsInclude: 'bibtex8', logExcludes: ['There were undefined citations'] },
+    },
+  },
   elsarticle: {
     engine: 'pdftex',
     files: {

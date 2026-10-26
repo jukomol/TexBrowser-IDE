@@ -16,36 +16,52 @@ const info = await page.evaluate(() => window.engine.start());
 console.log(`engine ready in ${Date.now() - t0} ms:`, info.name, '| shelf:', info.shelf.label, info.shelf.bundles);
 
 let failures = 0;
-for (const [name, doc] of Object.entries(DOCS)) {
-  if (only.length && !only.includes(name)) continue;
-  const t = Date.now();
-  const r = await page.evaluate(async ({ doc }) => {
-    const files = Object.entries(doc.files).map(([path, data]) => ({ path, data }));
-    for (const [path, b64] of Object.entries(doc.binary ?? {})) files.push({ path, data: Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)) });
+
+/** Compile a document in the page; `clean: false` keeps the previous compile's aux files. */
+const compile = (files, binary, engine, clean) =>
+  page.evaluate(async ({ files, binary, engine, clean }) => {
+    const list = Object.entries(files).map(([path, data]) => ({ path, data }));
+    for (const [path, b64] of Object.entries(binary ?? {})) list.push({ path, data: Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)) });
     try {
-      const res = await window.engine.compile({ files, mainFile: 'main.tex', engine: doc.engine, bibtex: 'auto', makeindex: true, maxPasses: 5, haltOnError: false, synctex: true, clean: true, useShelf: true });
+      const res = await window.engine.compile({ files: list, mainFile: 'main.tex', engine, bibtex: 'auto', makeindex: true, maxPasses: 5, haltOnError: false, synctex: true, clean, useShelf: true });
       return { ...res, pdf: res.pdf ? res.pdf.length : 0, synctex: res.synctex ? res.synctex.length : 0, pdfHead: res.pdf ? String.fromCharCode(...res.pdf.slice(0, 5)) : '' };
-    } catch (e) { return { error: String(e) }; }
-  }, { doc });
-  const ms = Date.now() - t;
-  if (r.error || doc.expect.error) {
-    if (doc.expect.error && r.error?.includes(doc.expect.error)) console.log(`✔ ${name}: rejected as expected (${r.error})`);
+    } catch (e) {
+      return { error: String(e) };
+    }
+  }, { files, binary, engine, clean });
+
+/** Check one compile result against its expectations and print the outcome. */
+function check(name, r, e, ms) {
+  if (r.error || e.error) {
+    if (e.error && r.error?.includes(e.error)) console.log(`✔ ${name}: rejected as expected (${r.error})`);
     else { console.log(`✖ ${name}: ${r.error ?? 'expected an error'}`); failures++; }
-    continue;
+    return;
   }
   const problems = [];
-  const e = doc.expect;
   if (!e.status.includes(r.status)) problems.push(`status ${r.status}`);
   if (e.status.some((s) => s !== 'failed' && s !== 'errors') && r.pdfHead !== '%PDF-') problems.push('no PDF');
   for (const s of e.logIncludes ?? []) if (!r.log.includes(s)) problems.push(`log lacks "${s}"`);
   for (const s of e.logExcludes ?? []) if (r.log.includes(s)) problems.push(`log has "${s}"`);
   if (e.fetchedIncludes && !r.fetched.some((f) => f === e.fetchedIncludes)) problems.push(`did not fetch ${e.fetchedIncludes}`);
   if (e.passesAtLeast && r.passes < e.passesAtLeast) problems.push(`only ${r.passes} passes`);
+  if (e.stepsInclude && !r.steps.some((s) => s.tool === e.stepsInclude)) problems.push(`no ${e.stepsInclude} step`);
   const summary = `${r.status} pdf=${r.pdf}B synctex=${r.synctex}B passes=${r.passes} steps=${r.steps.map((s) => `${s.tool}:${s.exitCode}:${s.ms}ms`).join(',')} fetched=[${r.fetched.join(',')}] unresolved=[${r.unresolved.join(',')}] ${ms}ms`;
   if (problems.length) {
     failures++;
     console.log(`✖ ${name}: ${problems.join('; ')}\n   ${summary}\n   notices: ${r.notices.join(' | ')}\n   --- log tail ---\n${r.log.split('\n').filter((l) => /^!|:\d+:|Error|Warning|not found/.test(l)).slice(0, 25).join('\n')}\n   --- transcript tail ---\n${r.transcript.slice(-1500)}`);
   } else console.log(`✔ ${name}: ${summary}`);
+}
+
+for (const [name, doc] of Object.entries(DOCS)) {
+  if (only.length && !only.includes(name)) continue;
+  let t = Date.now();
+  check(name, await compile(doc.files, doc.binary, doc.engine, true), doc.expect, Date.now() - t);
+  // Optional follow-up compile of the same project (aux files kept), e.g. after adding a file.
+  if (doc.then) {
+    t = Date.now();
+    const r = await compile({ ...doc.files, ...doc.then.files }, doc.binary, doc.engine, false);
+    check(`${name} → ${doc.then.label}`, r, doc.then.expect, Date.now() - t);
+  }
 }
 await browser.close();
 console.log(failures ? `\n${failures} failure(s)` : '\nall engine tests passed');
