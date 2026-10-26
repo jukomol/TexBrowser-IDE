@@ -81,21 +81,46 @@ export async function pushToGitHub(message: string, force = false): Promise<void
  * files deleted on GitHub (that were synced before) are removed; local-only
  * files are kept. A history snapshot is taken first.
  */
-export async function pullFromGitHub(): Promise<void> {
+/**
+ * Pull the linked repository into this project.
+ *
+ * Later pulls merge: files deleted on GitHub go, files only created locally stay.
+ * The first pull into a project that was never synced is different — its own files
+ * are usually a template's (the Welcome project, a "paper" skeleton…) and would get
+ * mixed into the repository's. Unless `localOnly` says what to do, the user is asked
+ * whether to drop them ("replace", the default) or keep both ("merge").
+ */
+export async function pullFromGitHub(localOnly?: 'replace' | 'merge'): Promise<void> {
   const ws = workspace();
   const link = ws?.project.github;
   if (!ws || !link) throw new Error('Link a repository first.');
   await ws.flush();
   const { files, shas } = await github().pull(link);
-  await createSnapshot(ws, `Before pulling ${link.owner}/${link.repo}`, false);
   const remote = new Map(files.map((f) => [f.path, f]));
   const last = link.shas ?? {};
+  // Files that exist only here and were never part of a sync (KEEP marks empty folders).
+  const onlyHere = ws.paths().filter((p) => !remote.has(p) && basename(p) !== KEEP && last[p] === undefined);
+  if (!link.shas && onlyHere.length && !localOnly) {
+    const shown = onlyHere.slice(0, 6).join(', ') + (onlyHere.length > 6 ? `, … (${onlyHere.length - 6} more)` : '');
+    openDialog({
+      type: 'confirm',
+      title: `Use the files from ${link.owner}/${link.repo}?`,
+      message:
+        `This project has ${onlyHere.length} file${onlyHere.length === 1 ? '' : 's'} that ${onlyHere.length === 1 ? 'is' : 'are'} not in the repository: ${shown}.\n\n` +
+        'Remove them so the project matches the repository? A copy of the current files is saved in History first.',
+      confirm: "Use the repository's files",
+      onConfirm: () => pullFromGitHub('replace'),
+      alternative: { label: 'Keep both', onSelect: () => pullFromGitHub('merge') },
+    });
+    return;
+  }
+  await createSnapshot(ws, `Before pulling ${link.owner}/${link.repo}`, false);
   const merged: SyncFile[] = [...files];
-  for (const p of ws.paths()) {
-    if (remote.has(p) || basename(p) === KEEP) continue;
-    if (last[p] !== undefined) continue; // deleted on GitHub
-    const f = ws.get(p)!;
-    merged.push(f.kind === 'text' ? { path: p, text: f.text } : { path: p, data: f.data });
+  if (localOnly !== 'replace') {
+    for (const p of onlyHere) {
+      const f = ws.get(p)!;
+      merged.push(f.kind === 'text' ? { path: p, text: f.text } : { path: p, data: f.data });
+    }
   }
   ws.replaceAll(merged);
   ws.updateMeta({ github: { ...link, shas, lastSync: Date.now() } });

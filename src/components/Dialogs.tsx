@@ -2,7 +2,7 @@
  * All modal dialogs, rendered from the store's `dialog` field.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Settings, FolderPlus, Search, Keyboard, GitCompare, FileArchive, FolderInput, Play, RotateCcw, FilePlus2, FolderPlus as FolderPlusIcon, Upload, Download, Moon, Crosshair, Save, Zap, Files, ListTree, History, Cpu, FileText, Sparkles } from 'lucide-react';
+import { Settings, FolderPlus, Search, Keyboard, GitCompare, FileArchive, FolderInput, Play, RotateCcw, FilePlus2, FolderPlus as FolderPlusIcon, Upload, Download, Moon, Crosshair, Save, Zap, Files, ListTree, History, Cpu, FileText, Sparkles, Lock, Globe } from 'lucide-react';
 import { Github } from './icons';
 import { useStore, closeDialog, openDialog, setState, updateSettings, toast, type Dialog } from '../state/store';
 import {
@@ -16,7 +16,9 @@ import { monaco } from '../editor/monaco';
 import { formatBytes, modKey } from '../utils/misc';
 import { languageFor } from '../utils/paths';
 import { WizardDialog } from './Wizards';
-import { Button, Kbd, Modal, TextInput, Toggle, clsx } from './ui';
+import { Button, Kbd, Modal, Spinner, TextInput, Toggle, clsx } from './ui';
+import { github, openFromGitHub } from '../state/github-actions';
+import { loadToken, type RepoSummary } from '../storage/github';
 import { FileIcon } from './FileIcon';
 import { ErrorBoundary } from './ErrorBoundary';
 
@@ -48,6 +50,8 @@ function DialogSwitch({ dialog }: { dialog: Dialog }) {
       return <NewProjectDialog initial={dialog.initialTemplate} />;
     case 'command-palette':
       return <CommandPalette />;
+    case 'open-github':
+      return <OpenGitHubDialog />;
     case 'shortcuts':
       return <ShortcutsDialog />;
     case 'wizard':
@@ -107,6 +111,20 @@ function ConfirmDialog({ d }: { d: Extract<Dialog, { type: 'confirm' }> }) {
       footer={
         <>
           <Button variant="ghost" onClick={closeDialog}>Cancel</Button>
+          {d.alternative && (
+            <Button
+              onClick={async () => {
+                closeDialog();
+                try {
+                  await d.alternative!.onSelect();
+                } catch (err) {
+                  toast({ kind: 'error', title: 'Something went wrong', message: err instanceof Error ? err.message : String(err) });
+                }
+              }}
+            >
+              {d.alternative.label}
+            </Button>
+          )}
           <Button
             variant={d.danger ? 'danger' : 'primary'}
             loading={busy}
@@ -128,7 +146,7 @@ function ConfirmDialog({ d }: { d: Extract<Dialog, { type: 'confirm' }> }) {
         </>
       }
     >
-      <p className="text-[13px] leading-relaxed text-muted">{d.message}</p>
+      <p className="whitespace-pre-line break-words text-[13px] leading-relaxed text-muted">{d.message}</p>
     </Modal>
   );
 }
@@ -270,7 +288,7 @@ function NewProjectDialog({ initial }: { initial?: string }) {
           <Button variant="ghost" icon={<FolderInput className="size-3.5" />} onClick={async () => { const files = await pickFiles({ directory: true }); if (files.length) { closeDialog(); void importFolderAsProject(files); } }}>
             Open folder
           </Button>
-          <Button variant="ghost" icon={<Github className="size-3.5" />} onClick={() => { closeDialog(); setState({ sidebar: 'github' }); }}>
+          <Button variant="ghost" icon={<Github className="size-3.5" />} onClick={() => openDialog({ type: 'open-github' })}>
             From GitHub
           </Button>
           <Button variant="primary" loading={busy} onClick={() => void create()}>Create</Button>
@@ -298,6 +316,117 @@ function NewProjectDialog({ initial }: { initial?: string }) {
         Project name
         <TextInput className="mt-1.5" autoFocus placeholder={t.name} value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void create()} />
       </label>
+    </Modal>
+  );
+}
+
+/**
+ * Open a GitHub repository as a brand-new project. The project holds exactly the
+ * repository's files: nothing from a template, and the open project is untouched.
+ */
+function OpenGitHubDialog() {
+  const token = loadToken();
+  const [input, setInput] = useState('');
+  const [branch, setBranch] = useState('');
+  const [folder, setFolder] = useState('');
+  const [repos, setRepos] = useState<RepoSummary[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    github()
+      .repos()
+      .then(setRepos)
+      .catch(() => setRepos([]));
+  }, [token]);
+
+  const shown = useMemo(() => {
+    const q = input.trim().toLowerCase();
+    return (repos ?? []).filter((r) => !q || r.fullName.toLowerCase().includes(q)).slice(0, 40);
+  }, [repos, input]);
+
+  const open = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await openFromGitHub(input.trim(), branch.trim() || undefined, folder.trim().replace(/^\/+|\/+$/g, '') || undefined);
+      closeDialog();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Open from GitHub"
+      icon={<Github className="size-4 text-accent" />}
+      onClose={closeDialog}
+      width="max-w-lg"
+      footer={
+        <>
+          <Button variant="ghost" onClick={closeDialog}>Cancel</Button>
+          <Button variant="primary" loading={busy} disabled={!input.trim()} onClick={() => void open()}>Open as new project</Button>
+        </>
+      }
+    >
+      <p className="mb-3 text-[13px] leading-relaxed text-muted">
+        Creates a new project with exactly the repository&apos;s files, linked for push and pull. Nothing from a template is added, and your other projects stay as they are.
+      </p>
+      <label className="block text-[13px] text-muted">
+        Repository
+        <TextInput
+          autoFocus
+          className="mt-1.5"
+          placeholder="owner/repo or a github.com URL (…/tree/branch/folder)"
+          value={input}
+          onChange={(e) => {
+            setInput(e.target.value);
+            setError(null);
+          }}
+          onKeyDown={(e) => e.key === 'Enter' && input.trim() && void open()}
+        />
+      </label>
+      {token ? (
+        <div className="mt-2 max-h-48 overflow-y-auto rounded-md border border-line" role="listbox" aria-label="Your repositories">
+          {!repos ? (
+            <div className="flex items-center gap-2 p-3 text-xs text-muted"><Spinner className="size-3.5" /> Loading your repositories…</div>
+          ) : !shown.length ? (
+            <div className="p-3 text-xs text-muted">No matching repositories.</div>
+          ) : (
+            shown.map((r) => (
+              <button
+                key={r.fullName}
+                role="option"
+                aria-selected={input === r.fullName}
+                onClick={() => {
+                  setInput(r.fullName);
+                  setBranch(r.defaultBranch);
+                }}
+                className={clsx('flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs', input === r.fullName ? 'bg-accent/15 text-fg' : 'text-muted hover:bg-hover')}
+              >
+                {r.private ? <Lock className="size-3 shrink-0" /> : <Globe className="size-3 shrink-0" />}
+                <span className="truncate">{r.fullName}</span>
+              </button>
+            ))
+          )}
+        </div>
+      ) : (
+        <p className="mt-2 text-[11.5px] text-faint">Public repositories open without a token. For private ones, connect GitHub in the GitHub panel first.</p>
+      )}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <label className="text-[11.5px] text-muted">
+          Branch <span className="text-faint">(default if empty)</span>
+          <TextInput className="mt-1" value={branch} onChange={(e) => setBranch(e.target.value)} />
+        </label>
+        <label className="text-[11.5px] text-muted">
+          Folder <span className="text-faint">(optional)</span>
+          <TextInput className="mt-1" placeholder="e.g. paper" value={folder} onChange={(e) => setFolder(e.target.value)} />
+        </label>
+      </div>
+      {error && <p className="mt-3 text-xs text-danger">{error}</p>}
     </Modal>
   );
 }

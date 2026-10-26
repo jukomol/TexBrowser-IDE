@@ -264,6 +264,62 @@ await step('XeLaTeX template compiles', async () => {
   assert(s.status !== 'failed' && s.pdf > 3000, `xelatex status ${s.status}: ${s.diags.filter((d) => d.severity === 'error').map((d) => d.message).join('; ')}`);
 });
 
+await step('Open from GitHub starts a clean project; the first pull asks before mixing files', async () => {
+  // A tiny public repository, served by a mock of the GitHub API (anonymous access).
+  const repoFiles = { 'main.tex': '\\documentclass{article}\\begin{document}From GitHub.\\end{document}\n', 'refs.bib': '@misc{a, title={A}}\n' };
+  const cors = { 'access-control-allow-origin': '*' };
+  const json = (route, body) => route.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: JSON.stringify(body) });
+  await page.route('https://api.github.com/**', (route) => {
+    const u = new URL(route.request().url()).pathname;
+    if (u === '/repos/octo/paper') return json(route, { owner: { login: 'octo' }, name: 'paper', full_name: 'octo/paper', private: false, default_branch: 'main', updated_at: '', description: null, permissions: { push: false } });
+    if (u.endsWith('/git/ref/heads/main')) return json(route, { object: { sha: 'c1' } });
+    if (u.endsWith('/git/commits/c1')) return json(route, { sha: 'c1', tree: { sha: 't1' } });
+    if (u.endsWith('/git/trees/t1')) return json(route, { truncated: false, tree: Object.keys(repoFiles).map((path, i) => ({ path, type: 'blob', sha: `b${i}`, mode: '100644' })) });
+    return route.fulfill({ status: 404, headers: cors, body: '{}' });
+  });
+  await page.route('https://raw.githubusercontent.com/**', (route) => {
+    const name = decodeURIComponent(new URL(route.request().url()).pathname.split('/').slice(4).join('/'));
+    return route.fulfill({ status: 200, headers: cors, body: repoFiles[name] ?? '' });
+  });
+  const paths = () => page.evaluate(() => window.__TEXBROWSER__.actions.workspace().paths().filter((p) => !p.endsWith('.keep')).sort());
+  const project = () => page.evaluate(() => window.__TEXBROWSER__.store.getState().project);
+
+  // 1. New project → From GitHub opens its own dialog and creates a project with only the repo's files.
+  await page.evaluate(() => window.__TEXBROWSER__.store.setState({ dialog: { type: 'new-project' } }));
+  await page.getByRole('button', { name: 'From GitHub' }).click();
+  await page.getByRole('heading', { name: 'Open from GitHub' }).waitFor();
+  await page.getByPlaceholder(/owner\/repo or a github.com URL/).fill('octo/paper');
+  await page.getByRole('button', { name: 'Open as new project' }).click();
+  await page.waitForFunction(() => window.__TEXBROWSER__.store.getState().project?.github?.repo === 'paper', null, { timeout: 10000 });
+  assert(JSON.stringify(await paths()) === JSON.stringify(['main.tex', 'refs.bib']), `opened project has extra files: ${await paths()}`);
+
+  // 2. Linking a template project and pulling asks first; "Use the repository's files" drops the template's.
+  const linkAndPull = async (name) => {
+    await page.evaluate((name) => window.__TEXBROWSER__.actions.createProject(name, 'welcome'), name);
+    await page.waitForFunction((name) => window.__TEXBROWSER__.store.getState().project?.name === name, name);
+    await page.evaluate(() => {
+      window.__TEXBROWSER__.githubActions.linkRepository({ owner: 'octo', repo: 'paper', branch: 'main', path: '' });
+      void window.__TEXBROWSER__.githubActions.pullFromGitHub();
+    });
+    await page.getByRole('heading', { name: 'Use the files from octo/paper?' }).waitFor();
+  };
+  await linkAndPull('Linked template (replace)');
+  await page.getByRole('button', { name: /Use the repository/ }).click();
+  await page.waitForFunction(() => window.__TEXBROWSER__.actions.workspace().paths().filter((p) => !p.endsWith('.keep')).length === 2, null, { timeout: 10000 });
+  assert(JSON.stringify(await paths()) === JSON.stringify(['main.tex', 'refs.bib']), `template files left behind: ${await paths()}`);
+  assert((await project()).github?.shas, 'project not marked as synced');
+  assert(String(await page.evaluate(() => window.__TEXBROWSER__.actions.workspace().getText('main.tex'))).includes('From GitHub'), 'main.tex is not the repository version');
+
+  // 3. "Keep both" merges instead.
+  await linkAndPull('Linked template (merge)');
+  await page.getByRole('button', { name: 'Keep both' }).click();
+  await page.waitForFunction(() => window.__TEXBROWSER__.actions.workspace().paths().includes('refs.bib'), null, { timeout: 10000 });
+  const merged = await paths();
+  assert(merged.includes('references.bib') && merged.includes('refs.bib'), `merge lost files: ${merged}`);
+  await page.unroute('https://api.github.com/**');
+  await page.unroute('https://raw.githubusercontent.com/**');
+});
+
 await browser.close();
 const real = errors.filter((e) => !/Download the React DevTools/.test(e));
 if (real.length) console.log('console errors:\n  ' + real.slice(0, 10).join('\n  '));
