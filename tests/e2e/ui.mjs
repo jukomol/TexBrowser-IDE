@@ -181,6 +181,52 @@ await step('command palette stays usable while open (button and Ctrl+P)', async 
   await page.keyboard.press('Escape');
 });
 
+await step('files dropped on the editor are ignored; the sidebar is the drop zone', async () => {
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.__TEXBROWSER__.store.setState({ sidebar: 'outline' }));
+  const paths = () => page.evaluate(() => window.__TEXBROWSER__.actions.workspace().paths());
+  const editorText = () => page.evaluate(() => window.__TEXBROWSER__.editor.get().getValue());
+  // Drag OS files over `selector`; optionally drop. Returns how the dragover was answered.
+  const drag = (selector, name, drop) =>
+    page.evaluate(({ selector, name, drop }) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], name, { type: 'image/png' }));
+      const el = document.querySelector(selector);
+      const opts = { bubbles: true, cancelable: true, dataTransfer: dt };
+      el.dispatchEvent(new DragEvent('dragenter', opts));
+      const over = new DragEvent('dragover', opts);
+      el.dispatchEvent(over);
+      if (drop) el.dispatchEvent(new DragEvent('drop', opts));
+      return { prevented: over.defaultPrevented, effect: dt.dropEffect };
+    }, { selector, name, drop });
+
+  const before = await editorText();
+  const over = await drag('.monaco-editor .view-lines', 'on-editor.png', false);
+  assert(over.prevented && over.effect === 'none', `editor accepted the drag (${JSON.stringify(over)})`);
+  // The Files panel opens and shows itself as the drop target; the editor shows nothing.
+  await page.getByText('Drop files here — onto a folder to put them inside it').waitFor({ timeout: 2000 });
+  assert((await page.evaluate(() => window.__TEXBROWSER__.store.getState().sidebar)) === 'files', 'Files panel not opened');
+  assert((await page.getByText('Drop files to add them to the project').count()) === 0, 'editor still shows a drop overlay');
+  await page.screenshot({ path: `${OUT}/09-file-drag.png` });
+  await drag('.monaco-editor .view-lines', 'on-editor.png', true);
+  await page.waitForTimeout(500);
+  assert(!(await paths()).includes('on-editor.png'), 'a file dropped on the editor was added');
+  assert((await editorText()) === before, 'dropping on the editor changed the source');
+  // The highlight clears by itself once the drag is over.
+  assert((await page.getByText('Drop files here — onto a folder').count()) === 0, 'drop highlight stuck after the drag ended');
+
+  await drag('[role=tree]', 'dropped-root.png', true);
+  await page.waitForFunction(() => window.__TEXBROWSER__.actions.workspace().paths().includes('dropped-root.png'), null, { timeout: 5000 });
+  const folder = await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('[role=tree] button')].find((b) => b.textContent.trim() === 'images');
+    btn.setAttribute('data-test-folder', '');
+    return !!btn;
+  });
+  assert(folder, 'images folder not found in the tree');
+  await drag('[data-test-folder]', 'dropped-in-images.png', true);
+  await page.waitForFunction(() => window.__TEXBROWSER__.actions.workspace().paths().includes('images/dropped-in-images.png'), null, { timeout: 5000 });
+});
+
 await step('theme switch to light and back', async () => {
   await page.evaluate(() => window.__TEXBROWSER__.actions.setTheme('light'));
   assert((await page.evaluate(() => document.documentElement.dataset.theme)) === 'light', 'not light');

@@ -5,6 +5,7 @@ import './index.css';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { toast } from './state/store';
+import { installFileDragGuard } from './utils/file-drag';
 
 // Errors outside React rendering (event handlers, promises) must not fail silently.
 // Benign browser noise and cancelled Monaco/pdf.js operations are ignored.
@@ -20,6 +21,7 @@ function report(err: unknown) {
 }
 window.addEventListener('error', (e) => report(e.error ?? e.message));
 window.addEventListener('unhandledrejection', (e) => report(e.reason));
+installFileDragGuard();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

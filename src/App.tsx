@@ -13,6 +13,7 @@ import { Dialogs } from './components/Dialogs';
 import { Toasts } from './components/Toasts';
 import { Spinner } from './components/ui';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { useFileDragActive } from './utils/file-drag';
 import { editorBridge } from './editor/bridge';
 
 function useCompact() {
@@ -45,6 +46,12 @@ export default function App() {
     mq.addEventListener('change', on);
     return () => mq.removeEventListener('change', on);
   }, [theme]);
+
+  // Files dragged in from the OS are dropped onto the file tree: make sure it is showing.
+  const fileDrag = useFileDragActive();
+  useEffect(() => {
+    if (fileDrag && getState().sidebar !== 'files') setState({ sidebar: 'files' });
+  }, [fileDrag]);
 
   // Global shortcuts (Monaco handles its own while focused).
   useEffect(() => {
